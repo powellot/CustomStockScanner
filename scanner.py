@@ -94,14 +94,11 @@ DEF_CONFIG = {
 
 WATCHLIST = [
     # Common low-float mover tickers
-    "NVDA", "AMD", "TSLA", "MARA", "RIOT", "CLSK",
-    "UPST", "SOFI", "HOOD", "PLTR", "RKLB", "JOBY",
-    "SMCI", "AI", "SOUN", "BBAR", "IONQ", "ARRY",
-    "NKLA", "BLNK", "CHPT", "SPWR", "NOVA", "RUN",
-    "HIMS", "OPEN", "OPRA", "TDUP", "BIGC", "LMND",
-    "CLOV", "BBIG", "SENS", "RSSS", "MVIS",
-    "WKHS", "RIDE", "SOLO", "GOEV", "FSR", "PTRA",
-    "ZEV", "FFIE", "MULN", "IDEX", "SEEL", "BCRX",
+    "NVDA", "AMD", "TSLA", "HOOD", "PLTR", "AAPL", "AMZN", "MSFT", "META", "NFLX",
+    "GME", "AMC", "BB", "NIO", "LI", "XPEV", "BYND", "F", "GE", "BA", 
+    "SNDL", "ZNGA", "CLOV", "WORK", "UPST", "ROKU", "TWTR", "UBER", "LYFT", "SNAP",
+    "SHOP", "SQ", "PYPL", "INTC", "CSCO", "QCOM", "ADBE", "CRM", "ORCL", "IBM",
+    "INTU", "NOW", "ZM", "DOCU", "CRWD", "OKTA", "DDOG", "NET", "FSLY", "ZS",
 ]
  
 UNIVERSE = list(set(WATCHLIST))
@@ -407,7 +404,7 @@ def header_panel(scan_time: str, scan_count: int, candidates: int) -> Panel:
     title_text.append(f"    |    Last Scan: {scan_time}", style = "dim #a8b2c1")
 
     meta_text = Text()
-    meta_text.append(f"Scan #: {scan_count}     ", style = "#6b7a90")
+    meta_text.append(f"Scan #: {scan_count}\n", style = "#6b7a90")
     meta_text.append(f"Found: ", style = "#6b7a90")
     meta_text.append(f"{candidates}", style = "bold #00ff88" if candidates > 0 else "dim #6b7a90")
     meta_text.append(f" candidates", style = "#6b7a90")
@@ -429,15 +426,15 @@ def filter_panel(config: dict) -> Panel:
     lines.append("ACTIVE FILTERS\n", style = "bold #7c8fa6")
     lines.append(f"  Price:        ", style = "dim #6b7a90")
     lines.append(f"${config['price_min']} - ${config['price_max']}\n", style = "#c9d6e3")
-    lines.append(f"  Min. RVOL:         ", style = "dim #6b7a90")
+    lines.append(f"  Min. RVOL:        ", style = "dim #6b7a90")
     lines.append(f"{config['rvol_min']}x\n", style = "#ffcc00")
     lines.append(f"  Max Float:        ", style = "dim #6b7a90")
     lines.append(format_float(config['float_max']) + "\n", style="#ff4d6d")
-    lines.append(f"  % from HOD: ", style = "dim #6b7a90")
+    lines.append(f"  % from HOD:        ", style = "dim #6b7a90")
     lines.append(f"≥ {config['pct_high_threshold']}%\n", style = "#00ff88")
-    lines.append(f"  Req. News:   ", style = "dim #6b7a90")
+    lines.append(f"  Req. News:        ", style = "dim #6b7a90")
     lines.append("Yes\n" if config["require_news"] else "No\n", style = "#a8b2c1")
-    lines.append(f"  Universe:    ", style = "dim #6b7a90")
+    lines.append(f"  Universe:        ", style = "dim #6b7a90")
     lines.append(f"{len(UNIVERSE)} tickers", style = "#a8b2c1")
 
     return Panel(lines, border_style = "#1e2d40", style = "on #060d16", padding = (0, 1))
