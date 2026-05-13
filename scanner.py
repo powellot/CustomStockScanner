@@ -73,7 +73,7 @@ DEF_CONFIG = {
     "float_max": 50000000,
 
     # % from daily high threshold (e.g. 5.0 means within 5% of daily high)
-    "pct_high_threshold": 8.0, # Consider chaning this to be % gain from open.
+    "pct_high_threshold": 8.0, # Consider changing this to be % gain from open.
 
     # News filter (True/False)
     "require_news": True, # Strict news filter
@@ -87,6 +87,7 @@ DEF_CONFIG = {
 
 # --------------------------------
 # Watchlist / Universe
+# Scan top % gainers + user-defined watchlist.
 # --------------------------------
 
 WATCHLIST = [
@@ -135,7 +136,60 @@ def fetch_news(ticker: str) -> list[str]:
         return headlines
     except Exception:
         return []        
+    
+# --------------------------------
+# Volume Baseline (RVOL denominator)
+# --------------------------------
 
+VOLUME_CACHE: dict[str, tuple[float, float]] = {} # {ticker: (avg_volume, timestamp)}
+VOLUME_CACHE_DURATION = 60 * 60 # 1 hour
+
+def fetch_avg_volume(ticker: str, days: int = 20) -> float:
+    # Fetch average daily volume over the past 'days' days. Uses caching.
+    now = time.time()
+    if ticker in VOLUME_CACHE:
+        avg_volume, timestamp = VOLUME_CACHE[ticker]
+        if now - timestamp < VOLUME_CACHE_DURATION:
+            return avg_volume
+
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=f"{days + 5}d")
+        if hist.empty or len(hist) < 3:
+            return 0.0
+        avg_volume = float(hist["Volume"].tail(days).mean())
+        VOLUME_CACHE[ticker] = (avg_volume, now)
+        return avg_volume
+    except Exception:
+        return 0.0
+    
+# --------------------------------
+# Float Fetching
+# --------------------------------
+
+FLOAT_CACHE: dict[str, tuple[Optional[float], float]] = {} # {ticker: (float, timestamp)}
+FLOAT_CACHE_DURATION = 6 * 60 * 60 # 6 hours
+
+def fetch_float(ticker: str) -> Optional[float]:
+    # Fetch float (number of shares available for trading). Uses caching. Yahoo finance "fast_info".
+    now = time.time()
+    if ticker in FLOAT_CACHE:
+        val, timestamp = FLOAT_CACHE[ticker]
+        if now - timestamp < FLOAT_CACHE_DURATION:
+            return val
+        
+    try:
+        stock = yf.Ticker(ticker)
+        fi = stock.fast_info #fast_info.shares is total shares; use info for float
+        info = stock.info
+        float_shares = info.get("floatShares") or info.get("sharesOutstanding")
+        result = float(float_shares) if float_shares else None
+        FLOAT_CACHE[ticker] = (result, now)
+        return result
+    except Exception:
+        FLOAT_CACHE[ticker] = (None, now)
+        return None
+    
 # --------------------------------
 # Main Loop
 # --------------------------------
