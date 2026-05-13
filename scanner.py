@@ -99,7 +99,7 @@ WATCHLIST = [
     "SMCI", "AI", "SOUN", "BBAR", "IONQ", "ARRY",
     "NKLA", "BLNK", "CHPT", "SPWR", "NOVA", "RUN",
     "HIMS", "OPEN", "OPRA", "TDUP", "BIGC", "LMND",
-    "CLOV", "BBIG", "NKLA", "SENS", "RSSS", "MVIS",
+    "CLOV", "BBIG", "SENS", "RSSS", "MVIS",
     "WKHS", "RIDE", "SOLO", "GOEV", "FSR", "PTRA",
     "ZEV", "FFIE", "MULN", "IDEX", "SEEL", "BCRX",
 ]
@@ -407,7 +407,7 @@ def header_panel(scan_time: str, scan_count: int, candidates: int) -> Panel:
     title_text.append(f"    |    Last Scan: {scan_time}", style = "dim #a8b2c1")
 
     meta_text = Text()
-    meta_text.append(f"Scan #: {scan_count}", style = "#6b7a90")
+    meta_text.append(f"Scan #: {scan_count}     ", style = "#6b7a90")
     meta_text.append(f"Found: ", style = "#6b7a90")
     meta_text.append(f"{candidates}", style = "bold #00ff88" if candidates > 0 else "dim #6b7a90")
     meta_text.append(f" candidates", style = "#6b7a90")
@@ -535,6 +535,7 @@ def main():
                 Rule(style = "#1e2d40"),
                 table,
                 Rule(style = "#1e2d40"),
+                Align.center(status_text),
                 Align.center(Text.from_markup("[dim #6b7a90]Data provided by Yahoo Finance | Ctrl+C to exit[/]")),
             )
 
