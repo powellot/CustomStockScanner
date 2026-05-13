@@ -405,7 +405,7 @@ def header_panel(scan_time: str, scan_count: int, candidates: int) -> Panel:
 
     meta_text = Text()
     meta_text.append(f"Scan #: {scan_count}\n", style = "#6b7a90")
-    meta_text.append(f"Found: ", style = "#6b7a90")
+    meta_text.append(f"Found:  ", style = "#6b7a90")
     meta_text.append(f"{candidates}", style = "bold #00ff88" if candidates > 0 else "dim #6b7a90")
     meta_text.append(f" candidates", style = "#6b7a90")
 
