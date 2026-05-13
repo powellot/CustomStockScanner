@@ -191,6 +191,108 @@ def fetch_float(ticker: str) -> Optional[float]:
         return None
     
 # --------------------------------
+# Price Fetching
+# --------------------------------
+
+def fetch_quote(ticker: str) -> Optional[dict]:
+    # Fetch current price and daily high. Returns None on failure.
+    try:
+        stock = yf.Ticker(ticker)
+        fi = stock.fast_info
+
+        price = fi.last_price
+        day_high = fi.day_high
+        day_low = fi.day_low
+        volume = fi.three_month_average_volume # Use 3 month average volume as a proxy for current volume to avoid excessive calls.
+        # Prefer today's volume if available
+        try:
+            volume = fi.last_volume
+        except Exception:
+            pass
+
+        if not price or price <= 0:
+            return None
+        if not day_high or day_high <= 0:
+            return None
+        
+        return {
+            "price": round(price, 2),
+            "day_high": round(day_high, 2),
+            "day_low": round(day_low, 2) if day_low else 0,
+            "volume": round(volume, 2) if volume else 0,
+        }
+    except Exception:
+        return None
+    
+# --------------------------------
+# CORE SCANNER LOGIC
+# --------------------------------
+def scan_ticker(ticker: str, config: dict) -> Optional[dict]:
+    # Scan a single ticker against the criteria. Returns result dict or None if it doesn't pass.
+    quote = fetch_quote(ticker)
+    if not quote:
+        return None
+
+    price =     quote["price"]
+    day_high =  quote["day_high"]
+    day_low =   quote["day_low"]
+    volume =    quote["volume"]
+
+    # Price filter
+    if price < config["price_min"] or price > config["price_max"]:
+        return None
+
+    # RVOL filter
+    avg_volume = fetch_avg_volume(ticker)
+    rvol = (volume / avg_volume) if avg_volume > 0 else 0
+    if rvol < config["rvol_min"]:
+        return None
+
+    # % from daily high filter
+    pct_from_high = ((day_high - price) / day_high) * 100 if day_high > 0 else 0
+    if pct_from_high > config["pct_high_threshold"]:
+        return None
+
+    # Float filter
+    float_shares = fetch_float(ticker)
+    if float_shares is not None and float_shares > config["float_max"]:
+        return None
+
+    # News filter
+    news_headlines = fetch_news(ticker) if config["require_news"] else []
+    if config["require_news"] and not news_headlines:
+        return None
+    
+    # Day range %
+    day_range_pct = ((day_high - day_low) / day_low * 100) if day_low else 0
+
+    return {
+        "ticker": ticker,
+        "price": price,
+        "day_high": day_high,
+        "pct_from_high": round(pct_from_high, 2),
+        "volume": volume,
+        "avg_volume": int(avg_volume),
+        "rvol": round(rvol, 2),
+        "float": float_shares,
+        "day_range_pct": round(day_range_pct, 2),
+        "news": news_headlines,
+        "has_news": len(news_headlines) > 0,
+        "top_headline": news_headlines[0][:60] + "..." if news_headlines else "--",
+    }
+
+def run_scan(universe: list[str], config: dict) -> list[dict]:
+    # Run the scanner across the universe and return a list of results. Parallel-ish.
+    results = []
+    for ticker in universe:
+        result = scan_ticker(ticker, config)
+        if result:
+            results.append(result)
+    # Sort results by RVOL desc, then % from high asc
+    results.sort(key = lambda x: (-x["rvol"], x["pct_from_high"]))
+    return results[:config["top_n"]] # Return top N results
+
+# --------------------------------
 # Main Loop
 # --------------------------------
 
