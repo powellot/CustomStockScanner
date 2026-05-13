@@ -58,6 +58,52 @@ current_theme = Theme({
 console = Console(theme = current_theme, highlight = False)
 
 # --------------------------------
+# Configuration
+# --------------------------------
+
+DEF_CONFIG = {
+    # Price range (USD)
+    "price_min": 1.00,
+    "price_max": 50.00,
+
+    # RVOL threshold (e.g. 2.0 means 200% of average volume)
+    "rvol_min": 1.5,
+
+    # Float max (Number of shares available for trading)
+    "float_max": 50000000,
+
+    # % from daily high threshold (e.g. 5.0 means within 5% of daily high)
+    "pct_high_threshold": 8.0, # Consider chaning this to be % gain from open.
+
+    # News filter (True/False)
+    "require_news": True, # Strict news filter
+
+    # Scanner update interval (seconds)
+    "update_interval": 60,
+
+    # Number of top results to display
+    "top_n": 25,
+}
+
+# --------------------------------
+# Watchlist / Universe
+# --------------------------------
+
+WATCHLIST = [
+    # Common low-float mover tickers
+    "NVDA", "AMD", "TSLA", "MARA", "RIOT", "CLSK",
+    "UPST", "SOFI", "HOOD", "PLTR", "RKLB", "JOBY",
+    "SMCI", "AI", "SOUN", "BBAR", "IONQ", "ARRY",
+    "NKLA", "BLNK", "CHPT", "SPWR", "NOVA", "RUN",
+    "HIMS", "OPEN", "OPRA", "TDUP", "BIGC", "LMND",
+    "CLOV", "BBIG", "NKLA", "SENS", "RSSS", "MVIS",
+    "WKHS", "RIDE", "SOLO", "GOEV", "FSR", "PTRA",
+    "ZEV", "FFIE", "MULN", "IDEX", "SEEL", "BCRX",
+]
+ 
+UNIVERSE = list(set(WATCHLIST))
+
+# --------------------------------
 # Main Loop
 # --------------------------------
 
