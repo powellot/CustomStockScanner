@@ -45,7 +45,7 @@ from rich.theme import Theme
 current_theme = Theme({
     "header":           "bold white on #0d1117",
     "bull":             "bold #00ff88",
-    "bear":             "bold ff4d6d",
+    "bear":             "bold #ff4d6d",
     "neutral":          "bold #a8b2c1",
     "hot":              "bold #ffcc00",
     "dim_text":         "dim #6b7a90",
