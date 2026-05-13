@@ -516,7 +516,7 @@ def main():
             scan_time = datetime.datetime.now().strftime("%H:%M:%S")
             status_msg = f"[bold #00ff88]Scan complete. Next scan in {config['update_interval']} seconds.[/]"
 
-        with Live(console = console, refresh_per_second = 4, screen = True) as Live:
+        with Live(console = console, refresh_per_second = 4, screen = True) as live:
             while True:
                 # Run scan
                 do_scan()
@@ -535,7 +535,7 @@ def main():
                     Rule(style = "#1e2d40"),
                     table,
                     Rule(style = "#1e2d40"),
-                    Align.center(Text.from_markup("[dim #6b7a90]Data provided by Yahoo Finance | Ctrl+C to exit[/]"),
+                    Align.center(Text.from_markup("[dim #6b7a90]Data provided by Yahoo Finance | Ctrl+C to exit[/]")),
                 )
 
                 live.update(display)
