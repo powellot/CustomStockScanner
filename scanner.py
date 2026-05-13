@@ -508,43 +508,43 @@ def main():
             continue
         i += 1
 
-        def do_scan():
-            nonlocal results, scan_time, status_msg, num_scan
-            status_msg = f"[bold #ffcc00]Scanning {len(UNIVERSE)} tickers...[/]"
-            num_scan += 1
-            results = run_scan(UNIVERSE, config)
-            scan_time = datetime.datetime.now().strftime("%H:%M:%S")
-            status_msg = f"[bold #00ff88]Scan complete. Next scan in {config['update_interval']} seconds.[/]"
+    def do_scan():
+        nonlocal results, scan_time, status_msg, num_scan
+        status_msg = f"[bold #ffcc00]Scanning {len(UNIVERSE)} tickers...[/]"
+        num_scan += 1
+        results = run_scan(UNIVERSE, config)
+        scan_time = datetime.datetime.now().strftime("%H:%M:%S")
+        status_msg = f"[bold #00ff88]Scan complete. Next scan in {config['update_interval']} seconds.[/]"
 
-        with Live(console = console, refresh_per_second = 4, screen = True) as live:
-            while True:
-                # Run scan
-                do_scan()
-                # Build and render table
-                table = build_table(results, scan_time, config)
+    with Live(console = console, refresh_per_second = 4, screen = True) as live:
+        while True:
+            # Run scan
+            do_scan()
+            # Build and render table
+            table = build_table(results, scan_time, config)
 
-                top_panel = Columns([filter_panel(config), legend_panel(),], expand = False, equal = False, padding = (0, 2))
+            top_panel = Columns([filter_panel(config), legend_panel(),], expand = False, equal = False, padding = (0, 2))
 
-                status_text = Text.from_markup(status_msg)
+            status_text = Text.from_markup(status_msg)
 
-                from rich.console import Group
-                display = Group(
-                    header_panel(scan_time, num_scan, len(results)),
-                    Rule(style = "#1e2d40"),
-                    top_panel,
-                    Rule(style = "#1e2d40"),
-                    table,
-                    Rule(style = "#1e2d40"),
-                    Align.center(Text.from_markup("[dim #6b7a90]Data provided by Yahoo Finance | Ctrl+C to exit[/]")),
-                )
+            from rich.console import Group
+            display = Group(
+                header_panel(scan_time, num_scan, len(results)),
+                Rule(style = "#1e2d40"),
+                top_panel,
+                Rule(style = "#1e2d40"),
+                table,
+                Rule(style = "#1e2d40"),
+                Align.center(Text.from_markup("[dim #6b7a90]Data provided by Yahoo Finance | Ctrl+C to exit[/]")),
+            )
 
+            live.update(display)
+
+            # Wait for next scan
+            for _ in range(config["update_interval"] * 4):
+                time.sleep(0.25)
+                # Keep the live display responsive during the wait
                 live.update(display)
-
-                # Wait for next scan
-                for _ in range(config["update_interval"] * 4):
-                    time.sleep(0.25)
-                    # Keep the live display responsive during the wait
-                    live.update(display)
             
 
 if __name__ == "__main__":
