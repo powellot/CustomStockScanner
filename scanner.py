@@ -41,18 +41,18 @@ from rich.theme import Theme
 # --------------------------------
 
 current_theme = Theme({
-    "header": "bold white on #0d1117",
-    "bull": "bold #00ff88",
-    "bear": "bold ff4d6d",
-    "neutral":       "bold #a8b2c1",
-    "hot":           "bold #ffcc00",
-    "dim_text":      "dim #6b7a90",
-    "label":         "bold #7c8fa6",
-    "news_badge":    "bold white on #1a6cf7",
-    "no_news_badge": "dim #3a4455",
-    "title":         "bold #00c9ff",
-    "border":        "#1e2d40",
-    "stat_box":      "on #0d1a26",
+    "header":           "bold white on #0d1117",
+    "bull":             "bold #00ff88",
+    "bear":             "bold ff4d6d",
+    "neutral":          "bold #a8b2c1",
+    "hot":              "bold #ffcc00",
+    "dim_text":         "dim #6b7a90",
+    "label":            "bold #7c8fa6",
+    "news_badge":       "bold white on #1a6cf7",
+    "no_news_badge":    "dim #3a4455",
+    "title":            "bold #00c9ff",
+    "border":         "#1e2d40",
+    "stat_box":         "on #0d1a26",
 })
 
 console = Console(theme = current_theme, highlight = False)
@@ -102,6 +102,39 @@ WATCHLIST = [
 ]
  
 UNIVERSE = list(set(WATCHLIST))
+
+# --------------------------------
+# News Fetching (Yahoo Finance)
+# --------------------------------
+
+NEWS_CACHE: dict[str, tuple[list, float]] = {} # {ticker: (headline, timestamp)}
+NEWS_CACHE_DURATION = 5 * 60 # 5 minutes
+
+def fetch_news(ticker: str) -> list[str]:
+    # Return today's headlines for a ticker. Uses caching to avoid excessive calls.
+    now = time.time()
+    if ticker in NEWS_CACHE:
+        headlines, timestamp = NEWS_CACHE[ticker]
+        if now - timestamp < NEWS_CACHE_DURATION:
+            return headlines
+
+    try:
+        stock = yf.Ticker(ticker)
+        news_items = stock.news or []
+        today = datetime.date.today()
+        headlines = []
+        for item in news_items[:5]: # Limit to top 5 news items
+            # providerPublishTime is a UNIX timestamp
+            publish_time = item.get("providerPublishTime", 0)
+            publish_date = datetime.date.fromtimestamp(publish_time)
+            if publish_date == today:
+                title = item.get("title", "")
+                if title:
+                    headlines.append(title)
+        NEWS_CACHE[ticker] = (headlines, now)
+        return headlines
+    except Exception:
+        return []        
 
 # --------------------------------
 # Main Loop
