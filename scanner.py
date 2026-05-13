@@ -4,6 +4,8 @@ Uses: Relative Volume, % from Daily High, News Events, Price, Float
 Output: Rich terminal table, 1 minute updates
 """
 
+# -*- coding: utf-8 -*-
+
 # ------------------------------------
 # Imports
 # ------------------------------------
@@ -70,7 +72,7 @@ DEF_CONFIG = {
     "rvol_min": 1.5,
 
     # Float max (Number of shares available for trading)
-    "float_max": 50000000,
+    "float_max": 50_000_000,
 
     # % from daily high threshold (e.g. 5.0 means within 5% of daily high)
     "pct_high_threshold": 8.0, # Consider changing this to be % gain from open.
@@ -267,19 +269,19 @@ def scan_ticker(ticker: str, config: dict) -> Optional[dict]:
     day_range_pct = ((day_high - day_low) / day_low * 100) if day_low else 0
 
     return {
-        "ticker": ticker,
-        "price": price,
-        "day_high": day_high,
-        "pct_from_high": round(pct_from_high, 2),
-        "volume": volume,
-        "avg_volume": int(avg_volume),
-        "rvol": round(rvol, 2),
-        "float": float_shares,
-        "day_range_pct": round(day_range_pct, 2),
-        "news": news_headlines,
-        "has_news": len(news_headlines) > 0,
-        "top_headline": news_headlines[0][:60] + "..." if news_headlines else "--",
-    }
+        "ticker":           ticker,
+        "price":            price,
+        "day_high":         day_high,
+        "pct_from_high":    round(pct_from_high, 2),
+        "volume":           volume,
+        "avg_volume":       int(avg_volume),
+        "rvol":             round(rvol, 2),
+        "float":            float_shares,
+        "day_range_pct":    round(day_range_pct, 2),
+        "news":             news_headlines,
+        "has_news":         len(news_headlines) > 0,
+        "top_headline":     news_headlines[0][:60] + "..." if news_headlines else "--",
+    }   
 
 def run_scan(universe: list[str], config: dict) -> list[dict]:
     # Run the scanner across the universe and return a list of results. Parallel-ish.
@@ -293,15 +295,257 @@ def run_scan(universe: list[str], config: dict) -> list[dict]:
     return results[:config["top_n"]] # Return top N results
 
 # --------------------------------
+# Table Rendering
+# --------------------------------
+
+# Formting helpers for table display
+
+def format_float(val: Optional[float]) -> str:
+    if val is None:
+        return "--"
+    elif val >= 1_000_000:
+        return f"{val / 1_000_000:.1f}M"
+    elif val >= 1_000:
+        return f"{val / 1_000:.0f}K"
+    return str(int(val))
+
+def format_volume(val: int) -> str:
+    if val >= 1_000_000:
+        return f"{val / 1_000_000:.2f}M"
+    elif val >= 1_000:
+        return f"{val / 1_000:.0f}K"
+    return str(val)
+
+def color_rvol(rvol: float) -> str:
+    if rvol >= 5:   return "#ff4500"    # blazing
+    if rvol >= 3:   return "#ffcc00"    # hot
+    if rvol >= 2:   return "#00ff88"    # good
+    return "#a8b2c1"                    # neutral
+
+def color_pct(pct: float) -> str:
+    if pct >= -1:   return "#00ff88"
+    if pct >= -3:   return "#7fffb2"
+    if pct >= -5:   return "#ffcc00"
+    return "#ff4d6d"
+
+def build_table(results: list[dict], scan_time: str, config: dict) -> Table:
+    table = Table(
+        title = None,
+        box = box.SIMPLE_HEAD,
+        border_style = "#1e2d40",
+        header_style = "bold #1c8fa6",
+        show_footer = False,
+        pad_edge = True,
+        expand = True,
+    )
+
+    # Define columns
+    table.add_column("#", style = "dim #3a4455", width = 3, justify = "right")
+    table.add_column("TICKER", style = "bold #e8f0fe", width = 7, justify = "left")
+    table.add_column("PRICE", style = "#c9d6e3", width = 8, justify = "right")
+    table.add_column("DAY HIGH", style = "#7c8fa6", width = 9, justify = "right")
+    table.add_column("% HOD", width = 8, justify = "right")
+    table.add_column("RVOL", width = 7, justify = "right")
+    table.add_column("VOLUME", style = "#a8b2c1", width = 10, justify = "right")
+    table.add_column("AVG VOL", style = "dim #6b7a90", width = 10, justify = "right")
+    table.add_column("FLOAT", width = 10, justify = "right")
+    table.add_column("DAY RNG %", width = 9, justify = "right")
+    table.add_column("NEWS", width = 5, justify = "center")
+    table.add_column("TOP HEADLINE", min_width = 30, justify = "left")
+
+    # Add rows
+    for i, r in enumerate(results, 1):
+        rvol = r["rvol"]
+        pct_hod = r["pct_from_high"]
+        has_news = r["has_news"]
+
+        rvol_str = f"[{color_rvol(rvol)}]{rvol:.2f}x[/]"
+        pct_str = f"[{color_pct(pct_hod)}]{pct_hod:+.2f}%[/]"
+        news_str = "[news_badge] YES [/]" if has_news else "[no_news_badge] NO [/]"
+        float_str = format_float(r["float"])
+        headline = r["top_headline"]
+        if headline != "--":
+            headline = f"[dim #8899aa]{headline}[/]"
+        else:
+            headline = "[dim #3a4455]--[/]"
+
+        drng_color =  "#ffcc00" if r["day_range_pct"] >= 10 else "#6b7a90"
+        drng_str = f"[{drng_color}]{r['day_range_pct']:.1f}%[/]"
+
+        float_color = "#ff4d6d" if (r["float"] or 0) < 10_000_000 else (
+                      "#ffcc00" if (r["float"] or 0) < 25_000_000 else "#6b7a90")
+        float_styled = f"[{float_color}]{float_str}[/]"
+
+        table.add_row(
+            str(i),
+            r["ticker"],
+            f"${r['price']:.2f}",
+            f"${r['day_high']:.2f}",
+            pct_str,
+            rvol_str,
+            format_volume(r["volume"]),
+            format_volume(r["avg_volume"]),
+            float_styled,
+            drng_str,
+            news_str,
+            headline,
+        )
+    
+    return table
+
+def build_layout(results: list[dict], scan_time: str, config: dict, status: str) -> str:
+    return results # Rendered inline
+
+# --------------------------------
+# Header Panel + Stats Bar
+# --------------------------------
+
+def header_panel(scan_time: str, scan_count: int, candidates: int) -> Panel:
+    now = datetime.datetime.now().strftime("%H:%M:%S ET")
+    title_text = Text()
+    title_text.append("US STOCK SCANNER", style = "bold #00c9ff")
+    title_text.append(f"    |    Last Scan: {scan_time}", style = "dim #a8b2c1")
+
+    meta_text = Text()
+    meta_text.append(f"Scan #: {scan_count}", style = "#6b7a90")
+    meta_text.append(f"Found: ", style = "#6b7a90")
+    meta_text.append(f"{candidates}", style = "bold #00ff88" if candidates > 0 else "dim #6b7a90")
+    meta_text.append(f" candidates", style = "#6b7a90")
+
+    content = Text()
+    content.append(title_text)
+    content.append("\n")
+    content.append(meta_text)
+
+    return Panel(
+        content,
+        border_style = "#0d3a5c",
+        style = "on #060d16",
+        padding=(0, 2),
+    )
+
+def filter_panel(config: dict) -> Panel:
+    lines = Text()
+    lines.append("ACTIVE FILTERS\n", style = "bold #7c8fa6")
+    lines.append(f"  Price:        ", style = "dim #6b7a90")
+    lines.append(f"${config['price_min']} - ${config['price_max']}\n", style = "#c9d6e3")
+    lines.append(f"  Min. RVOL:         ", style = "dim #6b7a90")
+    lines.append(f"{config['rvol_min']}x\n", style = "#ffcc00")
+    lines.append(f"  Max Float:        ", style = "dim #6b7a90")
+    lines.append(format_float(config['float_max']) + "\n", style="#ff4d6d")
+    lines.append(f"  % from HOD: ", style = "dim #6b7a90")
+    lines.append(f"≥ {config['pct_high_threshold']}%\n", style = "#00ff88")
+    lines.append(f"  Req. News:   ", style = "dim #6b7a90")
+    lines.append("Yes\n" if config["news_required"] else "No\n", style = "#a8b2c1")
+    lines.append(f"  Universe:    ", style = "dim #6b7a90")
+    lines.append(f"{len(UNIVERSE)} tickers", style = "#a8b2c1")
+
+    return Panel(lines, border_style = "#1e2d40", style = "on #060d16", padding = (0, 1))
+
+def legend_panel() -> Panel:
+    lines = Text()
+    lines.append("RVOL COLOR\n", style = "bold #7c8fa6")
+    lines.append("  ■ ", style = "#ff4500"); lines.append("5x+  Blazing\n", style = "dim")
+    lines.append("  ■ ", style = "#ffcc00"); lines.append("3x+  Hot\n",     style = "dim")
+    lines.append("  ■ ", style = "#00ff88"); lines.append("2x+  Active\n",  style = "dim")
+    lines.append("  ■ ", style = "#a8b2c1"); lines.append("1.5x Mild\n",    style = "dim")
+    lines.append("\nFLOAT COLOR\n", style = "bold #7c8fa6")
+    lines.append("  ■ ", style = "#ff4d6d"); lines.append("<10M  Low\n",    style = "dim")
+    lines.append("  ■ ", style = "#ffcc00"); lines.append("<25M  Medium\n", style = "dim")
+    lines.append("  ■ ", style = "#6b7a90"); lines.append("25M+  Large\n",  style = "dim")
+
+    return Panel(lines, border_style = "#1e2d40", style = "on #060d16", padding = (0, 1))
+
+# --------------------------------
 # Main Loop
 # --------------------------------
 
 def main():
+    config = DEF_CONFIG.copy()
     num_scan = 0
     results = []
     status_msg = "Initializing scanner..."
+    scan_time = "--"
 
     console.clear()
+
+    # Parse command line args
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--price-min" and i + 1 < len(args):
+            config["price_min"] = float(args[i + 1])
+            i += 2
+            continue
+        if a == "--price-max" and i + 1 < len(args):
+            config["price_max"] = float(args[i + 1])
+            i += 2
+            continue
+        if a == "--rvol-min" and i + 1 < len(args):
+            config["rvol_min"] = float(args[i + 1])
+            i += 2
+            continue
+        if a == "--float-max" and i + 1 < len(args):
+            config["float_max"] = int(float(args[i + 1]) * 1_000_000) # Accept float input in millions
+            i += 2
+            continue
+        if a == "--pct-high" and i + 1 < len(args):
+            config["pct_high_threshold"] = float(args[i + 1])
+            i += 2
+            continue
+        if a == "--interval" and i + 1 < len(args):
+            config["update_interval"] = int(args[i + 1])
+            i += 2
+            continue
+        if a == "--require-news":
+            config["require_news"] = True
+            i += 1
+            continue
+        if a == "--top" and i + 1 < len(args):
+            config["top_n"] = int(args[i + 1])
+            i += 2
+            continue
+        i += 1
+
+        def do_scan():
+            nonlocal results, scan_time, status_msg, num_scan
+            status_msg = f"[bold #ffcc00]Scanning {len(UNIVERSE)} tickers...[/]"
+            num_scan += 1
+            results = run_scan(UNIVERSE, config)
+            scan_time = datetime.datetime.now().strftime("%H:%M:%S")
+            status_msg = f"[bold #00ff88]Scan complete. Next scan in {config['update_interval']} seconds.[/]"
+
+        with Live(console = console, refresh_per_second = 4, screen = True) as Live:
+            while True:
+                # Run scan
+                do_scan()
+                # Build and render table
+                table = build_table(results, scan_time, config)
+
+                top_panel = Columns([filter_panel(config), legend_panel(),], expand = False, equal = False, padding = (0, 2))
+
+                status_text = Text.from_markup(status_msg)
+
+                from rich.console import Group
+                display = Group(
+                    header_panel(scan_time, num_scan, len(results)),
+                    Rule(style = "#1e2d40"),
+                    top_panel,
+                    Rule(style = "#1e2d40"),
+                    table,
+                    Rule(style = "#1e2d40"),
+                    Align.center(Text.from_markup("[dim #6b7a90]Data provided by Yahoo Finance | Ctrl+C to exit[/]"),
+                )
+
+                live.update(display)
+
+                # Wait for next scan
+                for _ in range(config["update_interval"] * 4):
+                    time.sleep(0.25)
+                    # Keep the live display responsive during the wait
+                    live.update(display)
+            
 
 if __name__ == "__main__":
     try:
