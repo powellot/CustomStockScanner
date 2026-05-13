@@ -100,8 +100,80 @@ WATCHLIST = [
     "SHOP", "SQ", "PYPL", "INTC", "CSCO", "QCOM", "ADBE", "CRM", "ORCL", "IBM",
     "INTU", "NOW", "ZM", "DOCU", "CRWD", "OKTA", "DDOG", "NET", "FSLY", "ZS",
 ]
- 
-UNIVERSE = list(set(WATCHLIST))
+
+# --------------------------------
+# Live Yahoo Finance universe fetching
+# --------------------------------
+
+SCREENER_CACHE: dict[str, tuple[list, float]] = {} # {screener: (tickers, timestamp)}
+SCREENER_CACHE_DURATION = 5 * 60 # 5 minutes
+
+def fetch_screener_tickers(screener_ids: list[str] = None, count: int = 100) -> list[str]:
+    # Fetch tickers from Yahoo Finance screeners. Uses caching to avoid excessive calls.
+    if screener_ids is None:
+        screener_ids = ["day_gainers", "most_actives", "small_cap_gainers"]
+
+    now = time.time()
+    cache_key = ",".join(screener_ids)
+    if cache_key in SCREENER_CACHE:
+        tickers, timestamp = SCREENER_CACHE[cache_key]
+        if now - timestamp < SCREENER_CACHE_DURATION:
+            return tickers
+        
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Referer": "https://finance.yahoo.com/",
+    })
+
+    try:
+        session.get("https://finance.yahoo.com/", timeout = 8) # Establish session with Yahoo
+        crumb_r = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout = 8)
+        crumb = crumb_r.text.strip()
+    except Exception:
+        crumb = ""
+    
+    tickers = []
+    for screener_id in screener_ids:
+        try:
+            url = (
+                f"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+                f"?formatted=false&scrIds={screener_id}&count={count}"
+                + (f"&crumb={crumb}" if crumb else "")
+            )
+            r = session.get(url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            quotes = (
+                data.get("finance", {})
+                    .get("result", [{}])[0]
+                    .get("quotes", [])
+            )
+            # Pull symbols, strip anything with '.' (foreign/ETF artifacts)
+            syms = [
+                q["symbol"] for q in quotes
+                if q.get("symbol") and "." not in q["symbol"]
+            ]
+            tickers.extend(syms)
+        except Exception:
+            pass  # Screener down, watchlist still covers program requirements
+
+    tickers = list(dict.fromkeys(tickers)) # Deduplicate while preserving order
+    SCREENER_CACHE[cache_key] = (tickers, now)
+    return tickers
+
+def build_universe() -> list[str]:
+    # Merge live screener tickers with static watchlist, prioritizing screener. Remove duplicates.
+    live = fetch_screener_tickers()
+    combined = list(dict.fromkeys(live + WATCHLIST))  # screener first, then watchlist
+    return combined
+
+UNIVERSE = build_universe()
 
 # --------------------------------
 # News Fetching (Yahoo Finance)
@@ -507,9 +579,11 @@ def main():
 
     def do_scan():
         nonlocal results, scan_time, status_msg, num_scan
+        status_msg = f"[bold #ffcc00]Building universe...[/]"
+        universe = build_universe()  
         status_msg = f"[bold #ffcc00]Scanning {len(UNIVERSE)} tickers...[/]"
         num_scan += 1
-        results = run_scan(UNIVERSE, config)
+        results = run_scan(universe, config)
         scan_time = datetime.datetime.now().strftime("%H:%M:%S")
         status_msg = f"[bold #00ff88]Scan complete. Next scan in {config['update_interval']} seconds.[/]"
 
