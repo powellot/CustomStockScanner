@@ -436,7 +436,7 @@ def filter_panel(config: dict) -> Panel:
     lines.append(f"  % from HOD: ", style = "dim #6b7a90")
     lines.append(f"≥ {config['pct_high_threshold']}%\n", style = "#00ff88")
     lines.append(f"  Req. News:   ", style = "dim #6b7a90")
-    lines.append("Yes\n" if config["news_required"] else "No\n", style = "#a8b2c1")
+    lines.append("Yes\n" if config["require_news"] else "No\n", style = "#a8b2c1")
     lines.append(f"  Universe:    ", style = "dim #6b7a90")
     lines.append(f"{len(UNIVERSE)} tickers", style = "#a8b2c1")
 
