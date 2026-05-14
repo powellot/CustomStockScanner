@@ -74,11 +74,11 @@ DEF_CONFIG = {
     # Float max (Number of shares available for trading)
     "float_max": 50_000_000,
 
-    # % from daily high threshold (e.g. 5.0 means within 5% of daily high)
-    "pct_high_threshold": 8.0, # Consider changing this to be % gain from open.
+    # Min % change from today's open (e.g. 2.0 means stock must be up at least 2% from open)
+    "pct_open_threshold": 2.0,
 
     # News filter (True/False)
-    "require_news": True, # Strict news filter
+    "require_news": False, # Strict news filter
 
     # Scanner update interval (seconds)
     "update_interval": 60,
@@ -109,63 +109,17 @@ SCREENER_CACHE: dict[str, tuple[list, float]] = {} # {screener: (tickers, timest
 SCREENER_CACHE_DURATION = 5 * 60 # 5 minutes
 
 def fetch_screener_tickers(screener_ids: list[str] = None, count: int = 100) -> list[str]:
-    # Fetch tickers from Yahoo Finance screeners. Uses caching to avoid excessive calls.
-    if screener_ids is None:
-        screener_ids = ["day_gainers", "most_actives", "small_cap_gainers"]
-
-    now = time.time()
-    cache_key = ",".join(screener_ids)
-    if cache_key in SCREENER_CACHE:
-        tickers, timestamp = SCREENER_CACHE[cache_key]
-        if now - timestamp < SCREENER_CACHE_DURATION:
-            return tickers
-        
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Referer": "https://finance.yahoo.com/",
-    })
-
-    try:
-        session.get("https://finance.yahoo.com/", timeout = 8) # Establish session with Yahoo
-        crumb_r = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout = 8)
-        crumb = crumb_r.text.strip()
-    except Exception:
-        crumb = ""
-    
-    tickers = []
-    for screener_id in screener_ids:
+    import yfinance as yf
+    all_tickers = []
+    for screener in ["day_gainers", "most_actives", "small_cap_gainers"]:
         try:
-            url = (
-                f"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
-                f"?formatted=false&scrIds={screener_id}&count={count}"
-                + (f"&crumb={crumb}" if crumb else "")
-            )
-            r = session.get(url, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            quotes = (
-                data.get("finance", {})
-                    .get("result", [{}])[0]
-                    .get("quotes", [])
-            )
-            # Pull symbols, strip anything with '.' (foreign/ETF artifacts)
-            syms = [
-                q["symbol"] for q in quotes
-                if q.get("symbol") and "." not in q["symbol"]
-            ]
-            tickers.extend(syms)
+            data = yf.screen(screener, size = count)
+            quotes = data.get("quotes", [])
+            syms = [q["symbol"] for q in quotes if "." not in q.get("symbol", "")]
+            all_tickers.extend(syms)
         except Exception:
-            pass  # Screener down, watchlist still covers program requirements
-
-    tickers = list(dict.fromkeys(tickers)) # Deduplicate while preserving order
-    SCREENER_CACHE[cache_key] = (tickers, now)
-    return tickers
+            pass
+    return list(dict.fromkeys(all_tickers))
 
 def build_universe() -> list[str]:
     # Merge live screener tickers with static watchlist, prioritizing screener. Remove duplicates.
@@ -272,6 +226,7 @@ def fetch_quote(ticker: str) -> Optional[dict]:
         fi = stock.fast_info
 
         price = fi.last_price
+        day_open = fi.open
         day_high = fi.day_high
         day_low = fi.day_low
         volume = fi.three_month_average_volume # Use 3 month average volume as a proxy for current volume to avoid excessive calls.
@@ -287,10 +242,11 @@ def fetch_quote(ticker: str) -> Optional[dict]:
             return None
         
         return {
-            "price": round(price, 2),
+            "price":    round(price, 2),
+            "open":     round(day_open, 2),
             "day_high": round(day_high, 2),
-            "day_low": round(day_low, 2) if day_low else 0,
-            "volume": round(volume, 2) if volume else 0,
+            "day_low":  round(day_low, 2) if day_low else 0,
+            "volume":   round(volume, 2) if volume else 0,
         }
     except Exception:
         return None
@@ -305,6 +261,7 @@ def scan_ticker(ticker: str, config: dict) -> Optional[dict]:
         return None
 
     price =     quote["price"]
+    open_px =   quote["open"]
     day_high =  quote["day_high"]
     day_low =   quote["day_low"]
     volume =    quote["volume"]
@@ -319,9 +276,9 @@ def scan_ticker(ticker: str, config: dict) -> Optional[dict]:
     if rvol < config["rvol_min"]:
         return None
 
-    # % from daily high filter
-    pct_from_high = ((day_high - price) / day_high) * 100 if day_high > 0 else 0
-    if pct_from_high > config["pct_high_threshold"]:
+    # % from daily open filter
+    pct_from_open = ((price - open_px) / open_px) * 100 if open_px > 0 else 0
+    if pct_from_open < config["pct_open_threshold"]:
         return None
 
     # Float filter
@@ -340,8 +297,9 @@ def scan_ticker(ticker: str, config: dict) -> Optional[dict]:
     return {
         "ticker":           ticker,
         "price":            price,
+        "open":             open_px,
         "day_high":         day_high,
-        "pct_from_high":    round(pct_from_high, 2),
+        "pct_from_open":    round(pct_from_open, 2),
         "volume":           volume,
         "avg_volume":       int(avg_volume),
         "rvol":             round(rvol, 2),
@@ -359,8 +317,8 @@ def run_scan(universe: list[str], config: dict) -> list[dict]:
         result = scan_ticker(ticker, config)
         if result:
             results.append(result)
-    # Sort results by RVOL desc, then % from high asc
-    results.sort(key = lambda x: (-x["rvol"], x["pct_from_high"]))
+    # Sort results by RVOL desc, then % from open desc
+    results.sort(key = lambda x: (-x["rvol"], -x["pct_from_open"]))
     return results[:config["top_n"]] # Return top N results
 
 # --------------------------------
@@ -391,11 +349,12 @@ def color_rvol(rvol: float) -> str:
     if rvol >= 2:   return "#00ff88"    # good
     return "#a8b2c1"                    # neutral
 
-def color_pct(pct: float) -> str:
-    if pct >= -1:   return "#00ff88"
-    if pct >= -3:   return "#7fffb2"
-    if pct >= -5:   return "#ffcc00"
-    return "#ff4d6d"
+def color_pct_from_open(pct: float) -> str:
+    if pct >= 10:  return "#ff4500"   # blazing up
+    if pct >= 5:   return "#ffcc00"   # strong move
+    if pct >= 2:   return "#00ff88"   # healthy gain
+    if pct >= 0:   return "#7fffb2"   # flat / slightly up
+    return "#ff4d6d"                  # below open
 
 def build_table(results: list[dict], scan_time: str, config: dict) -> Table:
     table = Table(
@@ -412,8 +371,8 @@ def build_table(results: list[dict], scan_time: str, config: dict) -> Table:
     table.add_column("#", style = "dim #3a4455", width = 3, justify = "right")
     table.add_column("TICKER", style = "bold #e8f0fe", width = 7, justify = "left")
     table.add_column("PRICE", style = "#c9d6e3", width = 8, justify = "right")
-    table.add_column("DAY HIGH", style = "#7c8fa6", width = 9, justify = "right")
-    table.add_column("% HOD", width = 8, justify = "right")
+    table.add_column("OPEN", style = "#7c8fa6", width = 8, justify = "right")
+    table.add_column("% CHG", width = 8, justify = "right")
     table.add_column("RVOL", width = 7, justify = "right")
     table.add_column("VOLUME", style = "#a8b2c1", width = 10, justify = "right")
     table.add_column("AVG VOL", style = "dim #6b7a90", width = 10, justify = "right")
@@ -425,11 +384,11 @@ def build_table(results: list[dict], scan_time: str, config: dict) -> Table:
     # Add rows
     for i, r in enumerate(results, 1):
         rvol = r["rvol"]
-        pct_hod = r["pct_from_high"]
+        pct_open = r["pct_from_open"]
         has_news = r["has_news"]
 
         rvol_str = f"[{color_rvol(rvol)}]{rvol:.2f}x[/]"
-        pct_str = f"[{color_pct(pct_hod)}]{pct_hod:+.2f}%[/]"
+        pct_str = f"[{color_pct_from_open(pct_open)}]{pct_open:+.2f}%[/]"
         news_str = "[news_badge] YES [/]" if has_news else "[no_news_badge] NO [/]"
         float_str = format_float(r["float"])
         headline = r["top_headline"]
@@ -449,7 +408,7 @@ def build_table(results: list[dict], scan_time: str, config: dict) -> Table:
             str(i),
             r["ticker"],
             f"${r['price']:.2f}",
-            f"${r['day_high']:.2f}",
+            f"${r['open']:.2f}",
             pct_str,
             rvol_str,
             format_volume(r["volume"]),
@@ -493,7 +452,7 @@ def header_panel(scan_time: str, scan_count: int, candidates: int) -> Panel:
         padding=(0, 2),
     )
 
-def filter_panel(config: dict) -> Panel:
+def filter_panel(config: dict, universe: list) -> Panel:
     lines = Text()
     lines.append("ACTIVE FILTERS\n", style = "bold #7c8fa6")
     lines.append(f"  Price:        ", style = "dim #6b7a90")
@@ -502,12 +461,12 @@ def filter_panel(config: dict) -> Panel:
     lines.append(f"{config['rvol_min']}x\n", style = "#ffcc00")
     lines.append(f"  Max Float:    ", style = "dim #6b7a90")
     lines.append(format_float(config['float_max']) + "\n", style="#ff4d6d")
-    lines.append(f"  % from HOD:   ", style = "dim #6b7a90")
-    lines.append(f"≥ {config['pct_high_threshold']}%\n", style = "#00ff88")
+    lines.append(f"  % from Open:  ", style = "dim #6b7a90")
+    lines.append(f"≥ {config['pct_open_threshold']}%\n", style = "#00ff88")
     lines.append(f"  Req. News:    ", style = "dim #6b7a90")
     lines.append("Yes\n" if config["require_news"] else "No\n", style = "#a8b2c1")
     lines.append(f"  Universe:     ", style = "dim #6b7a90")
-    lines.append(f"{len(UNIVERSE)} tickers", style = "#a8b2c1")
+    lines.append(f"{len(universe)} tickers", style = "#a8b2c1")
 
     return Panel(lines, border_style = "#1e2d40", style = "on #060d16", padding = (0, 1))
 
@@ -533,6 +492,7 @@ def main():
     config = DEF_CONFIG.copy()
     num_scan = 0
     results = []
+    universe = UNIVERSE[:]
     status_msg = "Initializing scanner..."
     scan_time = "--"
 
@@ -559,8 +519,8 @@ def main():
             config["float_max"] = int(float(args[i + 1]) * 1_000_000) # Accept float input in millions
             i += 2
             continue
-        if a == "--pct-high" and i + 1 < len(args):
-            config["pct_high_threshold"] = float(args[i + 1])
+        if a == "--pct-from-open" and i + 1 < len(args):
+            config["pct_from_open_min"] = float(args[i + 1])
             i += 2
             continue
         if a == "--interval" and i + 1 < len(args):
@@ -578,10 +538,10 @@ def main():
         i += 1
 
     def do_scan():
-        nonlocal results, scan_time, status_msg, num_scan
+        nonlocal results, scan_time, status_msg, num_scan, universe
         status_msg = f"[bold #ffcc00]Building universe...[/]"
         universe = build_universe()  
-        status_msg = f"[bold #ffcc00]Scanning {len(UNIVERSE)} tickers...[/]"
+        status_msg = f"[bold #ffcc00]Scanning {len(universe)} tickers...[/]"
         num_scan += 1
         results = run_scan(universe, config)
         scan_time = datetime.datetime.now().strftime("%H:%M:%S")
@@ -594,7 +554,7 @@ def main():
             # Build and render table
             table = build_table(results, scan_time, config)
 
-            top_panel = Columns([filter_panel(config), legend_panel(),], expand = False, equal = False, padding = (0, 2))
+            top_panel = Columns([filter_panel(config, universe), legend_panel(),], expand = False, equal = False, padding = (0, 2))
 
             status_text = Text.from_markup(status_msg)
 
